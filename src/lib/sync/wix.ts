@@ -118,6 +118,12 @@ async function fetchExtendedFieldDefs(): Promise<Map<string, WixExtendedField>> 
     for (const field of (data.fields ?? []) as WixExtendedField[]) {
       fields.set(field.key, field);
     }
+    // TEMP DEBUG: confirm exactly what Wix returns (names/types), to check
+    // whether "Partner Email" is really there and what its fieldType is.
+    console.log(
+      "Wix extended field definitions:",
+      JSON.stringify([...fields.values()].map((f) => ({ key: f.key, name: f.displayName, type: f.fieldType })))
+    );
   } catch (err) {
     console.warn("Wix list extended fields failed - falling back to raw field keys", err);
   }
@@ -187,6 +193,12 @@ export async function syncWix() {
 
     const extendedFields = contact.info?.extendedFields?.items;
     const labelKeys = contact.info?.labelKeys?.items;
+
+    // TEMP DEBUG: dump the raw extendedFields for one specific contact to
+    // check whether "Partner Email" is actually present on it at all.
+    if (email.trim().toLowerCase() === "hannahmaunder11@hotmail.co.uk") {
+      console.log("Hannah raw extendedFields:", JSON.stringify(extendedFields));
+    }
 
     const fields = {
       userId: user.id,
