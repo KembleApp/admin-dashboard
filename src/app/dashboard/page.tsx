@@ -38,11 +38,12 @@ export default async function DashboardPage() {
               <th className="px-4 py-3">Amplitude last seen</th>
               <th className="px-4 py-3">Wix membership</th>
               <th className="px-4 py-3">Typeform responses</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+              <tr key={u.id} className="group relative border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <Link href={`/dashboard/users/${u.id}`} className="font-medium text-slate-900 hover:underline">
                     {u.name ?? "—"}
@@ -56,11 +57,19 @@ export default async function DashboardPage() {
                 <td className="px-4 py-3 text-slate-600">{fmtDate(u.amplitudeProfile?.lastSeenAt)}</td>
                 <td className="px-4 py-3 text-slate-600">{u.wixContact?.membership ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-600">{u._count.typeformResponses}</td>
+                <td className="px-4 py-3 text-right">
+                  <Link
+                    href={`/dashboard/users/${u.id}`}
+                    className="opacity-0 transition-opacity group-hover:opacity-100 text-sm font-medium text-slate-900 hover:underline whitespace-nowrap"
+                  >
+                    View details →
+                  </Link>
+                </td>
               </tr>
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
                   No users yet. Run a sync (top right) once your data sources are connected.
                 </td>
               </tr>
