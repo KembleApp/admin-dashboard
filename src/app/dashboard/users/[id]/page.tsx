@@ -1,0 +1,104 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { db } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5">
+      <h3 className="mb-3 text-sm font-semibold text-slate-700">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between border-b border-slate-100 py-1.5 text-sm last:border-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-900">{value ?? "—"}</span>
+    </div>
+  );
+}
+
+export default async function UserDetailPage({ params }: { params: { id: string } }) {
+  const user = await db.user.findUnique({
+    where: { id: params.id },
+    include: {
+      amplitudeProfile: true,
+      wixContact: true,
+      typeformResponses: { orderBy: { submittedAt: "desc" } },
+    },
+  });
+
+  if (!user) notFound();
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-4">
+      <Link href="/dashboard" className="text-sm text-slate-500 hover:underline">
+        &larr; Back to all users
+      </Link>
+
+      <div>
+        <h2 className="text-xl font-semibold">{user.name ?? user.email}</h2>
+        <p className="text-sm text-slate-500">{user.email}</p>
+      </div>
+
+      <Section title="Demographics / PII">
+        <Field label="Name" value={user.name} />
+        <Field label="Email" value={user.email} />
+        <Field label="Phone" value={user.phone} />
+        <Field label="Location" value={user.location} />
+        <Field label="Company" value={user.company} />
+        <Field label="Job title" value={user.jobTitle} />
+      </Section>
+
+      <Section title="Amplitude — app behavior">
+        {user.amplitudeProfile ? (
+          <>
+            <Field label="Amplitude user ID" value={user.amplitudeProfile.amplitudeUserId} />
+            <Field label="Platform" value={user.amplitudeProfile.platform} />
+            <Field label="Device type" value={user.amplitudeProfile.deviceType} />
+            <Field
+              label="First seen"
+              value={user.amplitudeProfile.firstSeenAt?.toLocaleString()}
+            />
+            <Field label="Last seen" value={user.amplitudeProfile.lastSeenAt?.toLocaleString()} />
+            <Field label="Total events" value={user.amplitudeProfile.totalEvents} />
+          </>
+        ) : (
+          <p className="text-sm text-slate-400">No Amplitude data synced yet.</p>
+        )}
+      </Section>
+
+      <Section title="Wix — contact & commerce">
+        {user.wixContact ? (
+          <>
+            <Field label="Wix contact ID" value={user.wixContact.wixContactId} />
+            <Field label="Membership" value={user.wixContact.membership} />
+          </>
+        ) : (
+          <p className="text-sm text-slate-400">No Wix contact synced yet.</p>
+        )}
+      </Section>
+
+      <Section title={`Typeform — ${user.typeformResponses.length} response(s)`}>
+        {user.typeformResponses.length > 0 ? (
+          <ul className="space-y-2">
+            {user.typeformResponses.map((r) => (
+              <li key={r.id} className="border-b border-slate-100 pb-2 text-sm last:border-0">
+                <div className="flex justify-between">
+                  <span className="font-medium">{r.formTitle ?? r.formId}</span>
+                  <span className="text-slate-400">{r.submittedAt?.toLocaleDateString() ?? "—"}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-400">No Typeform responses matched yet.</p>
+        )}
+      </Section>
+    </div>
+  );
+}

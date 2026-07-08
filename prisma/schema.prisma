@@ -1,0 +1,93 @@
+// Prisma schema for the User Admin Dashboard
+// Unifies people across Amplitude, Wix and Typeform into one User record,
+// matched primarily by email. Raw per-source data is kept alongside the
+// unified record so nothing is lost in the merge.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Admins allowed to sign in to the dashboard. Belt-and-suspenders alongside
+// the ADMIN_EMAILS env allowlist checked in NextAuth callbacks.
+model AdminUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+}
+
+// The unified person record shown in the dashboard.
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Best-known demographic fields, merged from whichever source has them.
+  location String?
+  company  String?
+  jobTitle String?
+  phone    String?
+
+  amplitudeProfile  AmplitudeProfile?
+  wixContact        WixContact?
+  typeformResponses TypeformResponse[]
+
+  @@index([email])
+}
+
+// One row per person per Amplitude project (Amplitude's own user id kept
+// for re-sync matching).
+model AmplitudeProfile {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amplitudeUserId String    @unique
+  deviceType      String?
+  platform        String?
+  lastSeenAt      DateTime?
+  firstSeenAt     DateTime?
+  totalEvents     Int?
+  // Raw Amplitude user properties, kept as-is for fields we haven't
+  // promoted to first-class columns yet.
+  properties      Json?
+  // Recent behavioral events, most-recent-first.
+  recentEvents    Json?
+  syncedAt        DateTime  @default(now())
+}
+
+// One row per Wix contact.
+model WixContact {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wixContactId String   @unique
+  address      Json?
+  membership   String?
+  orders       Json?
+  labels       Json?
+  syncedAt     DateTime @default(now())
+}
+
+// One row per Typeform response. A user can have many (one per form
+// submission); userId is nullable because a response's email may not
+// resolve to a known user until matched.
+model TypeformResponse {
+  id          String    @id @default(cuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  formId      String
+  formTitle   String?
+  responseId  String    @unique
+  answers     Json
+  submittedAt DateTime?
+  syncedAt    DateTime  @default(now())
+
+  @@index([formId])
+}
