@@ -1,14 +1,18 @@
 /**
- * Amplitude sync — pulls raw events for the last 24h from the Export API,
- * unzips/gunzips the NDJSON payload, and rolls events up per Amplitude
- * user_id into an AmplitudeProfile.
+ * Amplitude sync — pulls the full last 365 days of events from the Export
+ * API (Amplitude's max query window) every run, unzips/gunzips the NDJSON
+ * payload, and recomputes lifetime rollups per Amplitude user_id into an
+ * AmplitudeProfile. Recomputing from full history each time (rather than
+ * incrementally) is simple and avoids drift; at this app's current volume
+ * (~18k events/month) a full year is ~2.6MB and fetches in a few seconds.
  * https://amplitude.com/docs/apis/analytics/export
  *
  * Note: a profile only links to a unified User if one of its events carries
  * an `email` user property. Verified against a live export: this project's
  * app currently does not send `email` via Amplitude identify/user
  * properties, so until the app is instrumented to do so, profiles will be
- * synced but left unlinked (no User match) — that's expected, not a bug.
+ * synced but left unlinked (no User match) unless there's a manual mapping
+ * in AmplitudeEmailMap.
  */
 import zlib from "node:zlib";
 import AdmZip from "adm-zip";
@@ -33,7 +37,23 @@ type AmplitudeEvent = {
   event_time: string;
   event_type: string;
   user_properties?: Record<string, unknown>;
+  event_properties?: Record<string, unknown>;
 };
+
+// Event names verified against a live 30-day export (18,234 events, 83
+// users) — see PR discussion for the full distinct event-type list. There's
+// no event literally named "partner accepted" or "goal completed"; these
+// are the closest confirmed real signals.
+const SESSION_EVENT = "session_started";
+const GOAL_COMPLETED_EVENT = "goal_creation_completed";
+const GOAL_SHARED_EVENT = "goal_card_shared";
+const PARTNER_INVITED_EVENT = "partner_invited";
+// Fires with partner_count:1 - the closest real signal for "partner
+// accepted the invite" (no such event exists directly).
+const PARTNER_ACCEPTED_EVENT = "household_canvas_unlocked";
+// Carries the accepting user's UUID on a shared-goal acceptance - the best
+// available "partner's ID" signal (not literally an Amplitude user_id).
+const GOAL_ACCEPTED_EVENT = "goal_card_accepted_onto_household_canvas";
 
 /**
  * Export API returns a zip archive; each entry inside is itself a gzipped
@@ -81,7 +101,7 @@ function parseAmplitudeTime(t: string): Date {
 
 export async function syncAmplitude() {
   const end = new Date();
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  const start = new Date(end.getTime() - 365 * 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().slice(0, 13).replace(/[-:]/g, "");
 
   const events = await fetchRecentEvents(fmt(start), fmt(end));
@@ -110,6 +130,7 @@ export async function syncAmplitude() {
       (a, b) => parseAmplitudeTime(a.event_time).getTime() - parseAmplitudeTime(b.event_time).getTime()
     );
     const latest = userEvents[userEvents.length - 1];
+    const earliest = userEvents[0];
     const email =
       (userEvents.map((e) => e.user_properties?.email as string | undefined).find(Boolean)) ??
       emailMap.get(amplitudeUserId) ??
@@ -124,28 +145,39 @@ export async function syncAmplitude() {
 
     if (!userId) continue; // can't attach an AmplitudeProfile without a User row
 
+    const sessionCount = userEvents.filter((e) => e.event_type === SESSION_EVENT).length;
+    const goalCompletedCount = userEvents.filter((e) => e.event_type === GOAL_COMPLETED_EVENT).length;
+    const goalSharedCount = userEvents.filter((e) => e.event_type === GOAL_SHARED_EVENT).length;
+    const partnerInvitedCount = userEvents.filter((e) => e.event_type === PARTNER_INVITED_EVENT).length;
+
+    const partnerAcceptedEvent = [...userEvents]
+      .reverse()
+      .find((e) => e.event_type === PARTNER_ACCEPTED_EVENT);
+    const goalAcceptedEvent = [...userEvents]
+      .reverse()
+      .find((e) => e.event_type === GOAL_ACCEPTED_EVENT && e.event_properties?.accepted_by);
+
+    const fields = {
+      userId,
+      deviceType: latest.device_type,
+      platform: latest.platform,
+      lastSeenAt: parseAmplitudeTime(latest.event_time),
+      firstSeenAt: parseAmplitudeTime(earliest.event_time),
+      totalEvents: userEvents.length,
+      sessionCount,
+      goalCompletedCount,
+      goalSharedCount,
+      partnerInvitedCount,
+      partnerAcceptedAt: partnerAcceptedEvent ? parseAmplitudeTime(partnerAcceptedEvent.event_time) : null,
+      partnerUuid: (goalAcceptedEvent?.event_properties?.accepted_by as string | undefined) ?? null,
+      properties: latest.user_properties as any,
+      recentEvents: userEvents.slice(-20) as any,
+    };
+
     await db.amplitudeProfile.upsert({
       where: { amplitudeUserId },
-      update: {
-        userId,
-        deviceType: latest.device_type,
-        platform: latest.platform,
-        lastSeenAt: parseAmplitudeTime(latest.event_time),
-        totalEvents: userEvents.length,
-        properties: latest.user_properties as any,
-        recentEvents: userEvents.slice(-20) as any,
-        syncedAt: new Date(),
-      },
-      create: {
-        amplitudeUserId,
-        userId,
-        deviceType: latest.device_type,
-        platform: latest.platform,
-        lastSeenAt: parseAmplitudeTime(latest.event_time),
-        totalEvents: userEvents.length,
-        properties: latest.user_properties as any,
-        recentEvents: userEvents.slice(-20) as any,
-      },
+      update: { ...fields, syncedAt: new Date() },
+      create: { amplitudeUserId, ...fields },
     });
   }
 

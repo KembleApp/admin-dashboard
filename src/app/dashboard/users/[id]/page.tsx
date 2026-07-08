@@ -83,27 +83,41 @@ export default async function UserDetailPage({ params }: { params: { id: string 
             />
             <Field label="Last seen" value={user.amplitudeProfile.lastSeenAt?.toLocaleString()} />
             <Field label="Total events" value={user.amplitudeProfile.totalEvents} />
+            <Field label="Sessions (session_started)" value={user.amplitudeProfile.sessionCount} />
+            <Field
+              label="Goals completed (goal_creation_completed)"
+              value={user.amplitudeProfile.goalCompletedCount}
+            />
+            <Field label="Goals shared (goal_card_shared)" value={user.amplitudeProfile.goalSharedCount} />
+            <Field
+              label="Partner invited (partner_invited)"
+              value={user.amplitudeProfile.partnerInvitedCount}
+            />
+            <Field
+              label="Partner accepted (household_canvas_unlocked)"
+              value={user.amplitudeProfile.partnerAcceptedAt?.toLocaleString() ?? "Not yet"}
+            />
+            <Field label="Partner UUID (accepted_by)" value={user.amplitudeProfile.partnerUuid} />
 
             {(() => {
               const events = (user.amplitudeProfile.recentEvents as RecentEvent[] | null) ?? [];
               if (events.length === 0) return null;
+              const top5 = [...events].reverse().slice(0, 5);
               return (
                 <div className="mt-4">
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Recent events ({events.length})
+                    Top 5 most recent events
                   </h4>
-                  <ul className="max-h-80 space-y-1 overflow-y-auto">
-                    {[...events]
-                      .reverse()
-                      .map((e, i) => (
-                        <li
-                          key={i}
-                          className="flex justify-between border-b border-slate-100 py-1.5 text-sm last:border-0"
-                        >
-                          <span className="font-medium text-slate-900">{e.event_type ?? "—"}</span>
-                          <span className="text-slate-400">{fmtAmplitudeTime(e.event_time)}</span>
-                        </li>
-                      ))}
+                  <ul className="space-y-1">
+                    {top5.map((e, i) => (
+                      <li
+                        key={i}
+                        className="flex justify-between border-b border-slate-100 py-1.5 text-sm last:border-0"
+                      >
+                        <span className="font-medium text-slate-900">{e.event_type ?? "—"}</span>
+                        <span className="text-slate-400">{fmtAmplitudeTime(e.event_time)}</span>
+                      </li>
+                    ))}
                   </ul>
                 </div>
               );

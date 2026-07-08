@@ -65,6 +65,20 @@ model AmplitudeProfile {
   lastSeenAt      DateTime?
   firstSeenAt     DateTime?
   totalEvents     Int?
+  // Lifetime counts of specific event types, recomputed from full history
+  // on every sync (see syncAmplitude for the exact event names counted).
+  sessionCount        Int?
+  goalCompletedCount  Int?
+  goalSharedCount     Int?
+  partnerInvitedCount Int?
+  // Best-available proxy for "partner accepted the invite": there's no
+  // event literally named that, so this is set from household_canvas_unlocked
+  // (fires once a partner has successfully paired).
+  partnerAcceptedAt   DateTime?
+  // UUID of whoever most recently accepted a shared goal onto the
+  // household canvas (accepted_by on goal_card_accepted_onto_household_canvas)
+  // - the best available signal for "the partner's ID."
+  partnerUuid         String?
   // Raw Amplitude user properties, kept as-is for fields we haven't
   // promoted to first-class columns yet.
   properties      Json?
