@@ -22,6 +22,23 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+type RecentEvent = {
+  event_type?: string;
+  event_time?: string;
+  platform?: string;
+  device_type?: string;
+};
+
+// Amplitude's event_time is UTC but formatted without a zone
+// ("YYYY-MM-DD HH:mm:ss.SSSSSS"), so parse it as UTC explicitly rather
+// than letting `new Date()` apply the server's local offset.
+function fmtAmplitudeTime(t: string | undefined) {
+  if (!t) return "—";
+  const iso = t.replace(" ", "T").replace(/(\.\d{3})\d*$/, "$1") + "Z";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? t : d.toLocaleString();
+}
+
 export default async function UserDetailPage({ params }: { params: { id: string } }) {
   const user = await db.user.findUnique({
     where: { id: params.id },
@@ -66,6 +83,31 @@ export default async function UserDetailPage({ params }: { params: { id: string 
             />
             <Field label="Last seen" value={user.amplitudeProfile.lastSeenAt?.toLocaleString()} />
             <Field label="Total events" value={user.amplitudeProfile.totalEvents} />
+
+            {(() => {
+              const events = (user.amplitudeProfile.recentEvents as RecentEvent[] | null) ?? [];
+              if (events.length === 0) return null;
+              return (
+                <div className="mt-4">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Recent events ({events.length})
+                  </h4>
+                  <ul className="max-h-80 space-y-1 overflow-y-auto">
+                    {[...events]
+                      .reverse()
+                      .map((e, i) => (
+                        <li
+                          key={i}
+                          className="flex justify-between border-b border-slate-100 py-1.5 text-sm last:border-0"
+                        >
+                          <span className="font-medium text-slate-900">{e.event_type ?? "—"}</span>
+                          <span className="text-slate-400">{fmtAmplitudeTime(e.event_time)}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              );
+            })()}
           </>
         ) : (
           <p className="text-sm text-slate-400">No Amplitude data synced yet.</p>
