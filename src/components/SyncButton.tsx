@@ -5,6 +5,24 @@ import { useRouter } from "next/navigation";
 
 type Toast = { message: string; isError: boolean };
 
+// Each source gets its own request/Vercel Function invocation (its own full
+// maxDuration budget) and runs in parallel, rather than sharing one window
+// sequentially - a slow Amplitude pull no longer risks timing out Wix/
+// Typeform along with it, and total wall time is bounded by the slowest one
+// instead of the sum of all three.
+const SOURCES = ["typeform", "amplitude", "wix"] as const;
+
+async function syncOne(source: (typeof SOURCES)[number]): Promise<string> {
+  try {
+    const res = await fetch(`/api/sync/${source}`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) return `error: request failed (${res.status})`;
+    return data.result as string;
+  } catch (err) {
+    return `error: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
 export default function SyncButton() {
   const [isPending, startTransition] = useTransition();
   const [syncing, setSyncing] = useState(false);
@@ -13,38 +31,20 @@ export default function SyncButton() {
 
   async function handleSync() {
     setSyncing(true);
-    let toastResult: Toast;
-    let failedCount = 0;
-
-    try {
-      const res = await fetch("/api/sync", { method: "POST" });
-      const data = await res.json();
-      const results: Record<string, string> = data.results ?? {};
-      const failed = Object.entries(results).filter(([, v]) => !v.startsWith("ok"));
-      failedCount = failed.length;
-
-      toastResult = !res.ok
-        ? { message: `Sync request failed (${res.status})`, isError: true }
-        : failed.length === 0
-          ? { message: "Sync complete", isError: false }
-          : { message: failed.map(([name, err]) => `${name}: ${err}`).join(" | "), isError: true };
-      console.log("Sync results:", data.results);
-    } catch (err) {
-      // Fetch/JSON failures (network error, timeout, non-JSON error page)
-      // must still resolve the UI state - otherwise the button is stuck on
-      // "Syncing…" forever with no toast, which is exactly what a silent
-      // timeout looked like before this try/catch existed.
-      failedCount = 1;
-      toastResult = {
-        message: `Sync failed: ${err instanceof Error ? err.message : String(err)}`,
-        isError: true,
-      };
-    }
+    const results = await Promise.all(SOURCES.map((source) => syncOne(source)));
+    const failed = SOURCES.map((source, i) => [source, results[i]] as const).filter(
+      ([, r]) => !r.startsWith("ok")
+    );
 
     setSyncing(false);
-    setToast(toastResult);
+    setToast(
+      failed.length === 0
+        ? { message: "Sync complete", isError: false }
+        : { message: failed.map(([name, err]) => `${name}: ${err}`).join(" | "), isError: true }
+    );
     startTransition(() => router.refresh());
-    setTimeout(() => setToast(null), failedCount === 0 ? 3000 : 15000);
+    console.log("Sync results:", Object.fromEntries(SOURCES.map((s, i) => [s, results[i]])));
+    setTimeout(() => setToast(null), failed.length === 0 ? 3000 : 15000);
   }
 
   return (
