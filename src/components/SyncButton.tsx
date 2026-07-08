@@ -12,17 +12,27 @@ export default function SyncButton() {
     setStatus("Syncing…");
     const res = await fetch("/api/sync", { method: "POST" });
     const data = await res.json();
-    setStatus(res.ok ? "Synced" : "Sync failed");
+    const results: Record<string, string> = data.results ?? {};
+    const failed = Object.entries(results).filter(([, v]) => !v.startsWith("ok"));
+
+    setStatus(
+      !res.ok
+        ? `Sync request failed (${res.status})`
+        : failed.length === 0
+          ? "Synced"
+          : failed.map(([name, err]) => `${name}: ${err}`).join(" | ")
+    );
     startTransition(() => router.refresh());
     console.log("Sync results:", data.results);
-    setTimeout(() => setStatus(null), 3000);
+    setTimeout(() => setStatus(null), failed.length === 0 ? 3000 : 15000);
   }
 
   return (
     <button
       onClick={handleSync}
       disabled={isPending}
-      className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+      className="max-w-md truncate rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+      title={status ?? undefined}
     >
       {status ?? "Sync now"}
     </button>

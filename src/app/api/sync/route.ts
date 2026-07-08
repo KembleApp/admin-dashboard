@@ -5,6 +5,10 @@ import { syncTypeform } from "@/lib/sync/typeform";
 import { syncAmplitude } from "@/lib/sync/amplitude";
 import { syncWix } from "@/lib/sync/wix";
 
+// Three syncs run sequentially in one request; Vercel's default function
+// timeout (10s on Hobby) is too short for that, so raise it explicitly.
+export const maxDuration = 60;
+
 // Admin-triggered manual sync. For production, prefer a scheduled job
 // (Vercel Cron, GitHub Action, etc.) hitting this route with a secret
 // header instead of relying only on manual clicks.
