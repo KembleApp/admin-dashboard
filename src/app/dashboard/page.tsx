@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
+import ImportAmplitudeEmails from "@/components/ImportAmplitudeEmails";
 
 export const dynamic = "force-dynamic"; // always show fresh data, never statically cache PII
 
@@ -23,6 +24,7 @@ export default async function DashboardPage() {
         <h2 className="text-sm font-medium text-slate-600">
           {users.length} unified user{users.length === 1 ? "" : "s"}
         </h2>
+        <ImportAmplitudeEmails />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">

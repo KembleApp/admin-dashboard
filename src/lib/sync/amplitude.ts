@@ -95,6 +95,12 @@ export async function syncAmplitude() {
     byUser.set(event.user_id, list);
   }
 
+  // Manual fallback for apps (like this one) that don't send `email` as an
+  // Amplitude user property — see AmplitudeEmailMap.
+  const emailMap = new Map(
+    (await db.amplitudeEmailMap.findMany()).map((row) => [row.amplitudeUserId, row.email])
+  );
+
   let linked = 0;
 
   for (const [amplitudeUserId, userEvents] of byUser) {
@@ -105,7 +111,9 @@ export async function syncAmplitude() {
     );
     const latest = userEvents[userEvents.length - 1];
     const email =
-      (userEvents.map((e) => e.user_properties?.email as string | undefined).find(Boolean)) ?? null;
+      (userEvents.map((e) => e.user_properties?.email as string | undefined).find(Boolean)) ??
+      emailMap.get(amplitudeUserId) ??
+      null;
 
     let userId: string | undefined;
     if (email) {

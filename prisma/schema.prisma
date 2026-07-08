@@ -43,6 +43,16 @@ model User {
   @@index([email])
 }
 
+// Manual user_id -> email mapping, for apps that don't send email as an
+// Amplitude user property. Imported once (or periodically) by an admin via
+// /api/admin/amplitude-emails, and consulted by the Amplitude sync as a
+// fallback when an event has no email user property.
+model AmplitudeEmailMap {
+  amplitudeUserId String   @id
+  email           String
+  importedAt      DateTime @default(now())
+}
+
 // One row per person per Amplitude project (Amplitude's own user id kept
 // for re-sync matching).
 model AmplitudeProfile {
