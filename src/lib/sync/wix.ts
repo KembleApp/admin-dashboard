@@ -2,11 +2,15 @@
  * Wix sync — needs WIX_API_KEY / WIX_SITE_ID (from the Wix Developers
  * Center, on a Headless/REST API key with Contacts read permission) in
  * .env.local. Field names and pagination below are verified against the
- * Contacts v4 API reference docs (not yet exercised against a live site,
- * since no Wix credentials are available in this project yet).
+ * Contacts v4 API reference docs.
  *
  * Uses the Wix Contacts v4 API to list contacts:
  * https://dev.wix.com/docs/rest/crm/members-contacts/contacts/contacts/contact-v4/query-contacts
+ *
+ * Contacts only carry opaque label *keys* - resolving them to their
+ * human-readable display names uses the separate Labels API, which needs
+ * the "Manage Contact Labels" scope on the API key. If that scope isn't
+ * granted, this falls back to storing raw keys instead of failing the sync.
  *
  * Note: Wix Contacts have no "membership" concept — that's a separate
  * Members/Pricing Plans API. The WixContact.membership column is left
@@ -67,6 +71,30 @@ type WixContact = {
   primaryEmail?: { subscriptionStatus?: string };
 };
 
+type WixLabel = { key: string; displayName: string };
+
+// Contacts only carry opaque label keys (e.g. "custom.vip") - the actual
+// human-readable name lives in a separate Labels API. Requires the
+// "Manage Contact Labels" permission scope on the API key; if that's not
+// granted, fall back to showing raw keys rather than failing the sync.
+async function fetchLabelNames(): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  try {
+    const res = await fetch(`${WIX_API}/contacts/v4/labels`, { headers: wixHeaders() });
+    if (!res.ok) {
+      console.warn(`Wix list labels failed (${res.status}) - falling back to raw label keys`);
+      return names;
+    }
+    const data = await res.json();
+    for (const label of (data.labels ?? []) as WixLabel[]) {
+      names.set(label.key, label.displayName);
+    }
+  } catch (err) {
+    console.warn("Wix list labels failed - falling back to raw label keys", err);
+  }
+  return names;
+}
+
 async function listContacts(): Promise<WixContact[]> {
   const results: WixContact[] = [];
   const limit = 100;
@@ -104,6 +132,7 @@ async function listContacts(): Promise<WixContact[]> {
 export async function syncWix() {
   const contacts = await listContacts();
   console.log(`Wix: found ${contacts.length} contact(s)`);
+  const labelNames = await fetchLabelNames();
 
   let matched = 0;
 
@@ -121,11 +150,12 @@ export async function syncWix() {
     matched++;
 
     const extendedFields = contact.info?.extendedFields?.items;
+    const labelKeys = contact.info?.labelKeys?.items;
 
     const fields = {
       userId: user.id,
       address: (contact.info?.addresses?.items as any) ?? undefined,
-      labels: (contact.info?.labelKeys?.items as any) ?? undefined,
+      labels: (labelKeys?.map((key) => labelNames.get(key) ?? key) as any) ?? undefined,
       source: contact.source?.sourceType ?? undefined,
       wixCreatedDate: contact.createdDate ? new Date(contact.createdDate) : undefined,
       lastActivityAt: contact.lastActivity?.activityDate
