@@ -43,7 +43,8 @@ export default function ImportAmplitudeEmails() {
         </button>
       </div>
       <p className="mb-2 text-xs text-slate-500">
-        Paste one pair per line, comma-separated: <code>amplitude_user_id,email</code>
+        Paste one pair per line, comma-separated: <code>amplitude_user_id,email</code> or{" "}
+        <code>email,amplitude_user_id</code> (either order works; a header row is ignored).
       </p>
       <textarea
         value={csv}

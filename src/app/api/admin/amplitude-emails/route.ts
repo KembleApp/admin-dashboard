@@ -19,9 +19,14 @@ export async function POST(request: Request) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const [rawId, rawEmail] = trimmed.split(",").map((s) => s.trim());
-    if (!rawId || !rawEmail) continue;
-    if (!rawEmail.includes("@")) continue; // skip a header row like "user_id,email"
+    const [first, second] = trimmed.split(",").map((s) => s.trim());
+    if (!first || !second) continue;
+
+    // Accept either column order ("id,email" or "email,id") by detecting
+    // which field is the email; skips header rows, since neither
+    // "email"/"uuid" contains an "@".
+    const [rawEmail, rawId] = first.includes("@") ? [first, second] : [second, first];
+    if (!rawEmail.includes("@")) continue;
 
     rows.push({ amplitudeUserId: rawId, email: rawEmail.toLowerCase() });
   }
