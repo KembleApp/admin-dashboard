@@ -95,6 +95,30 @@ async function fetchLabelNames(): Promise<Map<string, string>> {
   return names;
 }
 
+type WixCustomField = { key: string; name: string };
+
+// Same situation as labels: info.extendedFields.items is keyed by an
+// opaque custom-field key, not the name shown in the Wix dashboard - that
+// lookup lives in the separate Members Area Custom Fields API.
+// https://dev.wix.com/docs/rest/crm/members-contacts/members/member-management/custom-fields/custom-fields/list-custom-fields
+async function fetchCustomFieldNames(): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  try {
+    const res = await fetch(`${WIX_API}/members/v1/custom-fields`, { headers: wixHeaders() });
+    if (!res.ok) {
+      console.warn(`Wix list custom fields failed (${res.status}) - falling back to raw field keys`);
+      return names;
+    }
+    const data = await res.json();
+    for (const field of (data.fields ?? []) as WixCustomField[]) {
+      names.set(field.key, field.name);
+    }
+  } catch (err) {
+    console.warn("Wix list custom fields failed - falling back to raw field keys", err);
+  }
+  return names;
+}
+
 async function listContacts(): Promise<WixContact[]> {
   const results: WixContact[] = [];
   const limit = 100;
@@ -133,6 +157,7 @@ export async function syncWix() {
   const contacts = await listContacts();
   console.log(`Wix: found ${contacts.length} contact(s)`);
   const labelNames = await fetchLabelNames();
+  const customFieldNames = await fetchCustomFieldNames();
 
   let matched = 0;
 
@@ -167,7 +192,7 @@ export async function syncWix() {
       subscriptionStatus: contact.primaryEmail?.subscriptionStatus ?? undefined,
       extendedFields: extendedFields
         ? (Object.fromEntries(
-            Object.entries(extendedFields).map(([k, v]) => [k, unwrapWixValue(v)])
+            Object.entries(extendedFields).map(([k, v]) => [customFieldNames.get(k) ?? k, unwrapWixValue(v)])
           ) as any)
         : undefined,
     };
