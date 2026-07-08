@@ -97,6 +97,17 @@ model WixContact {
   membership   String?
   orders       Json?
   labels       Json?
+  // How the contact was created on Wix (WIX_FORMS, WIX_STORES, IMPORT, etc).
+  source            String?
+  wixCreatedDate    DateTime?
+  lastActivityAt    DateTime?
+  lastActivityType  String?
+  birthdate         String?
+  locale            String?
+  // Marketing-email opt-in status (NOT_SET, PENDING, SUBSCRIBED, UNSUBSCRIBED).
+  subscriptionStatus String?
+  // Custom fields defined in the Wix site's contact schema, kept as-is.
+  extendedFields    Json?
   syncedAt     DateTime @default(now())
 }
 

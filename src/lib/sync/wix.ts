@@ -31,8 +31,26 @@ function wixHeaders(): HeadersInit {
   };
 }
 
+type WixValue = {
+  nullValue?: null;
+  numberValue?: number;
+  stringValue?: string;
+  boolValue?: boolean;
+  structValue?: unknown;
+  listValue?: { values?: WixValue[] };
+};
+
+function unwrapWixValue(v: WixValue | undefined): unknown {
+  if (!v) return null;
+  if (v.listValue) return (v.listValue.values ?? []).map(unwrapWixValue);
+  return v.stringValue ?? v.numberValue ?? v.boolValue ?? v.structValue ?? null;
+}
+
 type WixContact = {
   id: string;
+  createdDate?: string;
+  source?: { sourceType?: string };
+  lastActivity?: { activityDate?: string; activityType?: string };
   info?: {
     name?: { first?: string; last?: string };
     emails?: { items?: { email?: string }[] };
@@ -40,8 +58,13 @@ type WixContact = {
     addresses?: { items?: unknown[] };
     company?: string;
     jobTitle?: string;
+    birthdate?: string;
+    locale?: string;
+    labelKeys?: { items?: string[] };
+    extendedFields?: { items?: Record<string, WixValue> };
   };
   primaryInfo?: { email?: string; phone?: string };
+  primaryEmail?: { subscriptionStatus?: string };
 };
 
 async function listContacts(): Promise<WixContact[]> {
@@ -97,18 +120,32 @@ export async function syncWix() {
     const user = await upsertUserByEmail(email, { name: name || undefined });
     matched++;
 
+    const extendedFields = contact.info?.extendedFields?.items;
+
+    const fields = {
+      userId: user.id,
+      address: (contact.info?.addresses?.items as any) ?? undefined,
+      labels: (contact.info?.labelKeys?.items as any) ?? undefined,
+      source: contact.source?.sourceType ?? undefined,
+      wixCreatedDate: contact.createdDate ? new Date(contact.createdDate) : undefined,
+      lastActivityAt: contact.lastActivity?.activityDate
+        ? new Date(contact.lastActivity.activityDate)
+        : undefined,
+      lastActivityType: contact.lastActivity?.activityType ?? undefined,
+      birthdate: contact.info?.birthdate ?? undefined,
+      locale: contact.info?.locale ?? undefined,
+      subscriptionStatus: contact.primaryEmail?.subscriptionStatus ?? undefined,
+      extendedFields: extendedFields
+        ? (Object.fromEntries(
+            Object.entries(extendedFields).map(([k, v]) => [k, unwrapWixValue(v)])
+          ) as any)
+        : undefined,
+    };
+
     await db.wixContact.upsert({
       where: { wixContactId: contact.id },
-      update: {
-        userId: user.id,
-        address: (contact.info?.addresses?.items as any) ?? undefined,
-        syncedAt: new Date(),
-      },
-      create: {
-        wixContactId: contact.id,
-        userId: user.id,
-        address: (contact.info?.addresses?.items as any) ?? undefined,
-      },
+      update: { ...fields, syncedAt: new Date() },
+      create: { wixContactId: contact.id, ...fields },
     });
 
     // Also backfill company/jobTitle/phone onto the unified User row if
