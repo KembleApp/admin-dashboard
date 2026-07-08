@@ -40,6 +40,13 @@ model User {
   wixContact        WixContact?
   typeformResponses TypeformResponse[]
 
+  // Resolved from Wix's "Partner Email" custom field (see syncWix). Set
+  // symmetrically on both users when linked, so `partner` is always the
+  // other person regardless of which side you look from.
+  partnerId String? @unique
+  partner   User?   @relation("UserPartner", fields: [partnerId], references: [id])
+  partnerOf User?   @relation("UserPartner")
+
   @@index([email])
 }
 

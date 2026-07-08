@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
+
+const userInclude = {
+  amplitudeProfile: true,
+  wixContact: true,
+  typeformResponses: { orderBy: { submittedAt: "desc" as const } },
+} satisfies Prisma.UserInclude;
+
+type UserWithRelations = Prisma.UserGetPayload<{ include: typeof userInclude }>;
 
 export const dynamic = "force-dynamic";
 
@@ -68,24 +77,9 @@ function fmtTypeformAnswer(a: TypeformAnswer): string {
   return "—";
 }
 
-export default async function UserDetailPage({ params }: { params: { id: string } }) {
-  const user = await db.user.findUnique({
-    where: { id: params.id },
-    include: {
-      amplitudeProfile: true,
-      wixContact: true,
-      typeformResponses: { orderBy: { submittedAt: "desc" } },
-    },
-  });
-
-  if (!user) notFound();
-
+function PersonSections({ user }: { user: UserWithRelations }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <Link href="/dashboard" className="text-sm text-slate-500 hover:underline">
-        &larr; Back to all users
-      </Link>
-
+    <div className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold">{user.name ?? user.email}</h2>
         <p className="text-sm text-slate-500">{user.email}</p>
@@ -242,6 +236,40 @@ export default async function UserDetailPage({ params }: { params: { id: string 
           <p className="text-sm text-slate-400">No Typeform responses matched yet.</p>
         )}
       </Section>
+    </div>
+  );
+}
+
+export default async function UserDetailPage({ params }: { params: { id: string } }) {
+  const user = await db.user.findUnique({
+    where: { id: params.id },
+    include: {
+      ...userInclude,
+      partner: { include: userInclude },
+    },
+  });
+
+  if (!user) notFound();
+
+  return (
+    <div className={`mx-auto space-y-4 ${user.partner ? "max-w-6xl" : "max-w-3xl"}`}>
+      <Link href="/dashboard" className="text-sm text-slate-500 hover:underline">
+        &larr; Back to all users
+      </Link>
+
+      {user.partner ? (
+        <>
+          <h1 className="text-lg font-semibold text-slate-700">
+            Household: {user.name ?? user.email} &amp; {user.partner.name ?? user.partner.email}
+          </h1>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <PersonSections user={user} />
+            <PersonSections user={user.partner} />
+          </div>
+        </>
+      ) : (
+        <PersonSections user={user} />
+      )}
     </div>
   );
 }

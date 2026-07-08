@@ -158,6 +158,12 @@ export async function syncWix() {
   console.log(`Wix: found ${contacts.length} contact(s)`);
   const labelNames = await fetchLabelNames();
   const customFieldNames = await fetchCustomFieldNames();
+  // Wix's "Partner Email" custom field links two contacts as a couple.
+  // Matched by its resolved display name (how a site owner identifies it
+  // in Wix's UI), not the opaque key, which is loop-invariant so found once.
+  const partnerEmailFieldKey = [...customFieldNames.entries()].find(
+    ([, fieldName]) => fieldName.trim().toLowerCase() === "partner email"
+  )?.[0];
 
   let matched = 0;
 
@@ -213,6 +219,23 @@ export async function syncWix() {
         phone: contact.primaryInfo?.phone ?? contact.info?.phones?.items?.[0]?.phone ?? undefined,
       },
     });
+
+    const partnerEmailRaw = partnerEmailFieldKey ? extendedFields?.[partnerEmailFieldKey] : undefined;
+    const partnerEmail = partnerEmailRaw ? (unwrapWixValue(partnerEmailRaw) as string | undefined) : undefined;
+
+    if (partnerEmail?.trim() && partnerEmail.trim().toLowerCase() !== email.trim().toLowerCase()) {
+      try {
+        const partner = await upsertUserByEmail(partnerEmail);
+        // Set symmetrically so `partner` resolves correctly from either
+        // side - partnerId is unique, so a data-entry error pointing two
+        // different people at the same partner would throw here rather
+        // than silently corrupt an existing pairing.
+        await db.user.update({ where: { id: user.id }, data: { partnerId: partner.id } });
+        await db.user.update({ where: { id: partner.id }, data: { partnerId: user.id } });
+      } catch (err) {
+        console.warn(`Wix: couldn't link partner for ${email} -> ${partnerEmail}`, err);
+      }
+    }
   }
 
   console.log(`Wix sync complete: ${matched} contact(s) matched to a user by email.`);
