@@ -26,7 +26,13 @@ type TypeformAnswer = {
   boolean?: boolean;
   date?: string;
   url?: string;
+  // Resolved from the form's field definitions at sync time (see
+  // fetchFieldTitles) - the answers endpoint itself only gives field id/ref,
+  // not the actual question text.
+  question?: string;
 };
+
+type TypeformField = { id: string; title?: string; properties?: { fields?: TypeformField[] } };
 
 type TypeformResponseItem = {
   response_id: string;
@@ -86,6 +92,29 @@ function extractEmail(answers: TypeformAnswer[]): string | null {
   return emailAnswer?.email ?? null;
 }
 
+// The responses endpoint only gives field id/ref, not the question text
+// shown to respondents - fetch the form definition once per form to build
+// an id -> title lookup. Question Groups nest their own fields, so this
+// flattens recursively.
+async function fetchFieldTitles(formId: string): Promise<Map<string, string>> {
+  const res = await fetch(`${TYPEFORM_API}/forms/${formId}`, { headers: authHeader() });
+  if (!res.ok) {
+    throw new Error(`Typeform retrieve form failed for ${formId}: ${res.status} ${await res.text()}`);
+  }
+  const data = await res.json();
+  const titles = new Map<string, string>();
+
+  function walk(fields: TypeformField[] | undefined) {
+    for (const field of fields ?? []) {
+      if (field.title) titles.set(field.id, field.title);
+      walk(field.properties?.fields);
+    }
+  }
+  walk(data.fields);
+
+  return titles;
+}
+
 export async function syncTypeform() {
   const forms = await listForms();
   console.log(`Typeform: found ${forms.length} form(s)`);
@@ -96,6 +125,7 @@ export async function syncTypeform() {
   for (const form of forms) {
     const responses = await listResponses(form.id);
     console.log(`  "${form.title}" (${form.id}): ${responses.length} response(s)`);
+    const fieldTitles = await fetchFieldTitles(form.id);
 
     for (const response of responses) {
       const email = extractEmail(response.answers);
@@ -107,12 +137,17 @@ export async function syncTypeform() {
         matchedToUser++;
       }
 
+      const answers = response.answers.map((a) => ({
+        ...a,
+        question: fieldTitles.get(a.field.id),
+      }));
+
       await db.typeformResponse.upsert({
         where: { responseId: response.response_id },
         update: {
           userId,
           formTitle: form.title,
-          answers: response.answers as any,
+          answers: answers as any,
           submittedAt: response.submitted_at ? new Date(response.submitted_at) : null,
           syncedAt: new Date(),
         },
@@ -121,7 +156,7 @@ export async function syncTypeform() {
           formId: form.id,
           formTitle: form.title,
           userId,
-          answers: response.answers as any,
+          answers: answers as any,
           submittedAt: response.submitted_at ? new Date(response.submitted_at) : null,
         },
       });

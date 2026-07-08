@@ -13,22 +13,38 @@ export default function SyncButton() {
 
   async function handleSync() {
     setSyncing(true);
-    const res = await fetch("/api/sync", { method: "POST" });
-    const data = await res.json();
-    const results: Record<string, string> = data.results ?? {};
-    const failed = Object.entries(results).filter(([, v]) => !v.startsWith("ok"));
+    let toastResult: Toast;
+    let failedCount = 0;
 
-    setSyncing(false);
-    setToast(
-      !res.ok
+    try {
+      const res = await fetch("/api/sync", { method: "POST" });
+      const data = await res.json();
+      const results: Record<string, string> = data.results ?? {};
+      const failed = Object.entries(results).filter(([, v]) => !v.startsWith("ok"));
+      failedCount = failed.length;
+
+      toastResult = !res.ok
         ? { message: `Sync request failed (${res.status})`, isError: true }
         : failed.length === 0
           ? { message: "Sync complete", isError: false }
-          : { message: failed.map(([name, err]) => `${name}: ${err}`).join(" | "), isError: true }
-    );
+          : { message: failed.map(([name, err]) => `${name}: ${err}`).join(" | "), isError: true };
+      console.log("Sync results:", data.results);
+    } catch (err) {
+      // Fetch/JSON failures (network error, timeout, non-JSON error page)
+      // must still resolve the UI state - otherwise the button is stuck on
+      // "Syncing…" forever with no toast, which is exactly what a silent
+      // timeout looked like before this try/catch existed.
+      failedCount = 1;
+      toastResult = {
+        message: `Sync failed: ${err instanceof Error ? err.message : String(err)}`,
+        isError: true,
+      };
+    }
+
+    setSyncing(false);
+    setToast(toastResult);
     startTransition(() => router.refresh());
-    console.log("Sync results:", data.results);
-    setTimeout(() => setToast(null), failed.length === 0 ? 3000 : 15000);
+    setTimeout(() => setToast(null), failedCount === 0 ? 3000 : 15000);
   }
 
   return (

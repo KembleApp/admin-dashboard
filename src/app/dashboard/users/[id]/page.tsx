@@ -50,6 +50,10 @@ type TypeformAnswer = {
   boolean?: boolean;
   date?: string;
   url?: string;
+  // The actual question text, resolved at sync time from the form's field
+  // definitions (see fetchFieldTitles in lib/sync/typeform.ts). Answers
+  // synced before that existed won't have it - re-run Sync now to backfill.
+  question?: string;
 };
 
 function fmtTypeformAnswer(a: TypeformAnswer): string {
@@ -219,13 +223,13 @@ export default async function UserDetailPage({ params }: { params: { id: string 
                     View form results (Typeform login required) ↗
                   </a>
                   {answers.length > 0 && (
-                    <ul className="mt-2 space-y-1">
+                    <ul className="mt-2 space-y-3">
                       {answers.map((a, i) => (
-                        <li key={i} className="flex justify-between text-sm">
-                          <span className="text-slate-500">
-                            {a.field?.ref ?? a.field?.type ?? a.type ?? "—"}
-                          </span>
-                          <span className="text-slate-900">{fmtTypeformAnswer(a)}</span>
+                        <li key={i} className="text-sm">
+                          <p className="text-slate-500">
+                            {a.question ?? a.field?.ref ?? a.field?.type ?? a.type ?? "—"}
+                          </p>
+                          <p className="text-slate-900">{fmtTypeformAnswer(a)}</p>
                         </li>
                       ))}
                     </ul>
