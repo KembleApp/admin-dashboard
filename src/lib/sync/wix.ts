@@ -95,28 +95,33 @@ async function fetchLabelNames(): Promise<Map<string, string>> {
   return names;
 }
 
-type WixCustomField = { key: string; name: string };
+type WixExtendedField = { key: string; displayName: string; fieldType: "SYSTEM" | "USER_DEFINED" };
 
-// Same situation as labels: info.extendedFields.items is keyed by an
-// opaque custom-field key, not the name shown in the Wix dashboard - that
-// lookup lives in the separate Members Area Custom Fields API.
-// https://dev.wix.com/docs/rest/crm/members-contacts/members/member-management/custom-fields/custom-fields/list-custom-fields
-async function fetchCustomFieldNames(): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
+// info.extendedFields.items is keyed by an opaque extended-field key - the
+// display name (and whether it's a real site-owner-created field vs one of
+// Wix's own internal bookkeeping fields, e.g. "emailSubscriptions.*") comes
+// from the Contacts Extended Fields API. This is NOT the Members Area
+// "Custom Fields" API (a different feature, for member profiles) - an
+// earlier version of this code queried that one by mistake, which is why
+// "Partner Email" matching never worked and why system fields with null
+// values were showing up.
+// https://dev.wix.com/docs/rest/crm/members-contacts/contacts/extended-fields/list-extended-fields
+async function fetchExtendedFieldDefs(): Promise<Map<string, WixExtendedField>> {
+  const fields = new Map<string, WixExtendedField>();
   try {
-    const res = await fetch(`${WIX_API}/members/v1/custom-fields`, { headers: wixHeaders() });
+    const res = await fetch(`${WIX_API}/contacts/v4/extended-fields`, { headers: wixHeaders() });
     if (!res.ok) {
-      console.warn(`Wix list custom fields failed (${res.status}) - falling back to raw field keys`);
-      return names;
+      console.warn(`Wix list extended fields failed (${res.status}) - falling back to raw field keys`);
+      return fields;
     }
     const data = await res.json();
-    for (const field of (data.fields ?? []) as WixCustomField[]) {
-      names.set(field.key, field.name);
+    for (const field of (data.fields ?? []) as WixExtendedField[]) {
+      fields.set(field.key, field);
     }
   } catch (err) {
-    console.warn("Wix list custom fields failed - falling back to raw field keys", err);
+    console.warn("Wix list extended fields failed - falling back to raw field keys", err);
   }
-  return names;
+  return fields;
 }
 
 async function listContacts(): Promise<WixContact[]> {
@@ -157,12 +162,12 @@ export async function syncWix() {
   const contacts = await listContacts();
   console.log(`Wix: found ${contacts.length} contact(s)`);
   const labelNames = await fetchLabelNames();
-  const customFieldNames = await fetchCustomFieldNames();
+  const extendedFieldDefs = await fetchExtendedFieldDefs();
   // Wix's "Partner Email" custom field links two contacts as a couple.
   // Matched by its resolved display name (how a site owner identifies it
   // in Wix's UI), not the opaque key, which is loop-invariant so found once.
-  const partnerEmailFieldKey = [...customFieldNames.entries()].find(
-    ([, fieldName]) => fieldName.trim().toLowerCase() === "partner email"
+  const partnerEmailFieldKey = [...extendedFieldDefs.entries()].find(
+    ([, def]) => def.displayName.trim().toLowerCase() === "partner email"
   )?.[0];
 
   let matched = 0;
@@ -196,9 +201,16 @@ export async function syncWix() {
       birthdate: contact.info?.birthdate ?? undefined,
       locale: contact.info?.locale ?? undefined,
       subscriptionStatus: contact.primaryEmail?.subscriptionStatus ?? undefined,
+      // Only show genuine site-owner-created fields (USER_DEFINED) with an
+      // actual value - Wix's own SYSTEM bookkeeping fields (subscription
+      // status, display-name preferences, etc.) are noise here and mostly
+      // duplicate what's already captured in dedicated columns above.
       extendedFields: extendedFields
         ? (Object.fromEntries(
-            Object.entries(extendedFields).map(([k, v]) => [customFieldNames.get(k) ?? k, unwrapWixValue(v)])
+            Object.entries(extendedFields)
+              .filter(([k]) => extendedFieldDefs.get(k)?.fieldType === "USER_DEFINED")
+              .map(([k, v]) => [extendedFieldDefs.get(k)?.displayName ?? k, unwrapWixValue(v)])
+              .filter(([, v]) => v !== null && v !== "")
           ) as any)
         : undefined,
     };
