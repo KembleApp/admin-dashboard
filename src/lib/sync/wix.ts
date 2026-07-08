@@ -1,12 +1,17 @@
 /**
- * Wix sync — STUB. Not runnable yet: needs WIX_API_KEY / WIX_SITE_ID (from
- * the Wix Developers Center, on a Headless/REST API key with Contacts
- * read permission) in .env.local. Unverified against a live site, since
- * this sandbox has no network access to Wix's API — check the response
- * shape against real data before trusting field names below.
+ * Wix sync — needs WIX_API_KEY / WIX_SITE_ID (from the Wix Developers
+ * Center, on a Headless/REST API key with Contacts read permission) in
+ * .env.local. Field names and pagination below are verified against the
+ * Contacts v4 API reference docs (not yet exercised against a live site,
+ * since no Wix credentials are available in this project yet).
  *
  * Uses the Wix Contacts v4 API to list contacts:
- * https://dev.wix.com/docs/rest/crm/members-contacts/contacts/contacts/list-contacts
+ * https://dev.wix.com/docs/rest/crm/members-contacts/contacts/contacts/contact-v4/query-contacts
+ *
+ * Note: Wix Contacts have no "membership" concept — that's a separate
+ * Members/Pricing Plans API. The WixContact.membership column is left
+ * unset here; wire up that API separately if site membership status is
+ * needed.
  */
 import { db } from "@/lib/db";
 import { upsertUserByEmail } from "@/lib/sync/util";
@@ -36,21 +41,24 @@ type WixContact = {
     company?: string;
     jobTitle?: string;
   };
-  primaryInfo?: { email?: string };
+  primaryInfo?: { email?: string; phone?: string };
 };
 
 async function listContacts(): Promise<WixContact[]> {
   const results: WixContact[] = [];
-  let cursor: string | undefined;
+  const limit = 100;
+  let offset = 0;
 
+  // Query Contacts uses offset-based paging (there's no cursor variant for
+  // this endpoint), and reports pagingMetadata.count for the page size
+  // actually returned.
   for (;;) {
     const res = await fetch(`${WIX_API}/contacts/v4/contacts/query`, {
       method: "POST",
       headers: wixHeaders(),
       body: JSON.stringify({
         query: {
-          paging: { limit: 100 },
-          cursorPaging: cursor ? { cursor } : undefined,
+          paging: { limit, offset },
         },
       }),
     });
@@ -63,9 +71,8 @@ async function listContacts(): Promise<WixContact[]> {
     const items: WixContact[] = data.contacts ?? [];
     results.push(...items);
 
-    const nextCursor = data.pagingMetadata?.cursors?.next;
-    if (!nextCursor || items.length === 0) break;
-    cursor = nextCursor;
+    if (items.length < limit) break;
+    offset += limit;
   }
 
   return results;
@@ -94,14 +101,12 @@ export async function syncWix() {
       where: { wixContactId: contact.id },
       update: {
         userId: user.id,
-        membership: contact.info?.jobTitle ?? undefined,
         address: (contact.info?.addresses?.items as any) ?? undefined,
         syncedAt: new Date(),
       },
       create: {
         wixContactId: contact.id,
         userId: user.id,
-        membership: contact.info?.jobTitle ?? undefined,
         address: (contact.info?.addresses?.items as any) ?? undefined,
       },
     });
@@ -113,7 +118,7 @@ export async function syncWix() {
       data: {
         company: contact.info?.company ?? undefined,
         jobTitle: contact.info?.jobTitle ?? undefined,
-        phone: contact.info?.phones?.items?.[0]?.phone ?? undefined,
+        phone: contact.primaryInfo?.phone ?? contact.info?.phones?.items?.[0]?.phone ?? undefined,
       },
     });
   }

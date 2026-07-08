@@ -1,22 +1,17 @@
 /**
- * Amplitude sync — STUB. Not runnable yet: needs AMPLITUDE_API_KEY /
- * AMPLITUDE_SECRET_KEY (from Amplitude project Settings > Projects >
- * General) in .env.local, and hasn't been exercised against a live
- * project, since this sandbox has no network access to Amplitude's API.
- * Treat the request/response shapes below as "best effort from docs,"
- * verify against a real response before relying on it.
+ * Amplitude sync — pulls raw events for the last 24h from the Export API,
+ * unzips/gunzips the NDJSON payload, and rolls events up per Amplitude
+ * user_id into an AmplitudeProfile.
+ * https://amplitude.com/docs/apis/analytics/export
  *
- * Approach: Amplitude doesn't offer a single "list all users" endpoint.
- * The two realistic options are:
- *   1. Export API — bulk-export raw events for a date range, then derive
- *      per-user rollups (last seen, event counts, properties) yourself.
- *      https://amplitude.com/docs/apis/analytics/export
- *   2. User Profile API — look up one user at a time by user_id/device_id.
- *      https://amplitude.com/docs/apis/analytics/user-profile
- * This stub uses the Export API since the dashboard needs to enumerate
- * *all* users, not look up one at a time. Swap in Profile API calls if you
- * only ever need to refresh a single known user.
+ * Note: a profile only links to a unified User if one of its events carries
+ * an `email` user property. Verified against a live export: this project's
+ * app currently does not send `email` via Amplitude identify/user
+ * properties, so until the app is instrumented to do so, profiles will be
+ * synced but left unlinked (no User match) — that's expected, not a bug.
  */
+import zlib from "node:zlib";
+import AdmZip from "adm-zip";
 import { db } from "@/lib/db";
 import { upsertUserByEmail } from "@/lib/sync/util";
 
@@ -41,33 +36,53 @@ type AmplitudeEvent = {
 };
 
 /**
- * Export API returns a zip of gzipped NDJSON files for the given hour
- * range. Unzipping/gunzipping is left as TODO — reach for a library like
- * `adm-zip` + `zlib.gunzipSync`, or `jszip`, once this is wired up for
- * real. Sketch below shows the shape of the call and how events would be
- * folded into AmplitudeProfile once parsed.
+ * Export API returns a zip archive; each entry inside is itself a gzipped
+ * NDJSON file (one event per line), named like
+ * "<project_id>_<date>_<hour>#<part>.json.gz".
  */
-async function fetchRecentEvents(_startHour: string, _endHour: string): Promise<AmplitudeEvent[]> {
+async function fetchRecentEvents(startHour: string, endHour: string): Promise<AmplitudeEvent[]> {
   const url = new URL("https://amplitude.com/api/2/export");
-  url.searchParams.set("start", _startHour); // format: YYYYMMDDTHH
-  url.searchParams.set("end", _endHour);
+  url.searchParams.set("start", startHour); // format: YYYYMMDDTHH
+  url.searchParams.set("end", endHour);
 
   const res = await fetch(url, { headers: basicAuthHeader() });
+  if (res.status === 404) {
+    return []; // Amplitude returns 404 when there's no data for the range
+  }
   if (!res.ok) {
     throw new Error(`Amplitude export failed: ${res.status} ${await res.text()}`);
   }
 
-  // TODO: response body is a zip of .gz NDJSON files — unzip, gunzip, and
-  // JSON.parse each line into AmplitudeEvent. Returning [] until that's
-  // implemented so this compiles and fails loudly (not silently) if run.
-  console.warn("Amplitude sync: zip/gzip parsing not yet implemented — returning no events.");
-  return [];
+  const zip = new AdmZip(Buffer.from(await res.arrayBuffer()));
+  const events: AmplitudeEvent[] = [];
+
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory || !entry.entryName.endsWith(".json.gz")) continue;
+    const ndjson = zlib.gunzipSync(entry.getData()).toString("utf8");
+    for (const line of ndjson.split("\n")) {
+      if (!line.trim()) continue;
+      events.push(JSON.parse(line));
+    }
+  }
+
+  return events;
+}
+
+/**
+ * Amplitude's event_time is UTC but formatted as "YYYY-MM-DD HH:mm:ss.SSSSSS"
+ * (space-separated, microseconds, no zone) — `new Date()` on that string
+ * parses it as local time in Node, silently shifting it by the server's UTC
+ * offset. Normalize to a real ISO string first.
+ */
+function parseAmplitudeTime(t: string): Date {
+  const iso = t.replace(" ", "T").replace(/(\.\d{3})\d*$/, "$1") + "Z";
+  return new Date(iso);
 }
 
 export async function syncAmplitude() {
   const end = new Date();
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 13).replace(/[-:]/g, "").replace("T", "T");
+  const fmt = (d: Date) => d.toISOString().slice(0, 13).replace(/[-:]/g, "");
 
   const events = await fetchRecentEvents(fmt(start), fmt(end));
 
@@ -80,14 +95,23 @@ export async function syncAmplitude() {
     byUser.set(event.user_id, list);
   }
 
+  let linked = 0;
+
   for (const [amplitudeUserId, userEvents] of byUser) {
+    // Events aren't guaranteed to arrive in chronological order across
+    // multiple hour files, so sort before treating the last one as "latest".
+    userEvents.sort(
+      (a, b) => parseAmplitudeTime(a.event_time).getTime() - parseAmplitudeTime(b.event_time).getTime()
+    );
     const latest = userEvents[userEvents.length - 1];
-    const email = (latest.user_properties?.email as string | undefined) ?? null;
+    const email =
+      (userEvents.map((e) => e.user_properties?.email as string | undefined).find(Boolean)) ?? null;
 
     let userId: string | undefined;
     if (email) {
       const user = await upsertUserByEmail(email);
       userId = user.id;
+      linked++;
     }
 
     if (!userId) continue; // can't attach an AmplitudeProfile without a User row
@@ -98,7 +122,7 @@ export async function syncAmplitude() {
         userId,
         deviceType: latest.device_type,
         platform: latest.platform,
-        lastSeenAt: new Date(latest.event_time),
+        lastSeenAt: parseAmplitudeTime(latest.event_time),
         totalEvents: userEvents.length,
         properties: latest.user_properties as any,
         recentEvents: userEvents.slice(-20) as any,
@@ -109,7 +133,7 @@ export async function syncAmplitude() {
         userId,
         deviceType: latest.device_type,
         platform: latest.platform,
-        lastSeenAt: new Date(latest.event_time),
+        lastSeenAt: parseAmplitudeTime(latest.event_time),
         totalEvents: userEvents.length,
         properties: latest.user_properties as any,
         recentEvents: userEvents.slice(-20) as any,
@@ -117,7 +141,9 @@ export async function syncAmplitude() {
     });
   }
 
-  console.log(`Amplitude sync complete: ${byUser.size} user(s) processed.`);
+  console.log(
+    `Amplitude sync complete: ${byUser.size} user(s) seen, ${linked} matched to a user by email.`
+  );
 }
 
 if (require.main === module) {
