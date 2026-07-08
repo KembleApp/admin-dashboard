@@ -13,7 +13,6 @@ export default async function DashboardPage() {
     orderBy: { updatedAt: "desc" },
     include: {
       amplitudeProfile: true,
-      wixContact: true,
       _count: { select: { typeformResponses: true } },
     },
   });
@@ -33,10 +32,7 @@ export default async function DashboardPage() {
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Company / Title</th>
-              <th className="px-4 py-3">Location</th>
               <th className="px-4 py-3">Amplitude last seen</th>
-              <th className="px-4 py-3">Wix membership</th>
               <th className="px-4 py-3">Typeform responses</th>
               <th className="px-4 py-3" />
             </tr>
@@ -50,12 +46,7 @@ export default async function DashboardPage() {
                   </Link>
                 </td>
                 <td className="px-4 py-3 text-slate-600">{u.email}</td>
-                <td className="px-4 py-3 text-slate-600">
-                  {[u.jobTitle, u.company].filter(Boolean).join(" @ ") || "—"}
-                </td>
-                <td className="px-4 py-3 text-slate-600">{u.location ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-600">{fmtDate(u.amplitudeProfile?.lastSeenAt)}</td>
-                <td className="px-4 py-3 text-slate-600">{u.wixContact?.membership ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-600">{u._count.typeformResponses}</td>
                 <td className="px-4 py-3 text-right">
                   <Link
@@ -69,7 +60,7 @@ export default async function DashboardPage() {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
                   No users yet. Run a sync (top right) once your data sources are connected.
                 </td>
               </tr>
