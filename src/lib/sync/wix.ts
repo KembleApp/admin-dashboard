@@ -164,7 +164,32 @@ async function listContacts(): Promise<WixContact[]> {
   return results;
 }
 
+// TEMP DEBUG: "Partner Email" turned out to live in a Wix CMS collection
+// (BetaApplication), not Contacts or Members. Dumping a couple of raw rows
+// to see the actual field keys before wiring up real matching logic.
+async function debugFetchBetaApplication() {
+  try {
+    const res = await fetch(`${WIX_API}/wix-data/v2/items/query`, {
+      method: "POST",
+      headers: wixHeaders(),
+      body: JSON.stringify({
+        dataCollectionId: "BetaApplication",
+        query: { paging: { limit: 3 } },
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`Wix CMS query failed (${res.status}): ${await res.text()}`);
+      return;
+    }
+    const data = await res.json();
+    console.log("BetaApplication sample items:", JSON.stringify(data.dataItems));
+  } catch (err) {
+    console.warn("Wix CMS query failed", err);
+  }
+}
+
 export async function syncWix() {
+  await debugFetchBetaApplication();
   const contacts = await listContacts();
   console.log(`Wix: found ${contacts.length} contact(s)`);
   const labelNames = await fetchLabelNames();
