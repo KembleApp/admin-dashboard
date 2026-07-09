@@ -22,6 +22,7 @@
  */
 import { db } from "@/lib/db";
 import { upsertUserByEmail } from "@/lib/sync/util";
+import { applyOverrides } from "@/lib/editableFields";
 
 const WIX_API = "https://www.wixapis.com";
 
@@ -259,32 +260,42 @@ export async function syncWix() {
     const extendedFields = contact.info?.extendedFields?.items;
     const labelKeys = contact.info?.labelKeys?.items;
 
-    const fields = {
-      userId: user.id,
-      address: (contact.info?.addresses?.items as any) ?? undefined,
-      labels: (labelKeys?.map((key) => labelNames.get(key) ?? key) as any) ?? undefined,
-      source: contact.source?.sourceType ?? undefined,
-      wixCreatedDate: contact.createdDate ? new Date(contact.createdDate) : undefined,
-      lastActivityAt: contact.lastActivity?.activityDate
-        ? new Date(contact.lastActivity.activityDate)
-        : undefined,
-      lastActivityType: contact.lastActivity?.activityType ?? undefined,
-      birthdate: contact.info?.birthdate ?? undefined,
-      locale: contact.info?.locale ?? undefined,
-      subscriptionStatus: contact.primaryEmail?.subscriptionStatus ?? undefined,
-      // Only show genuine site-owner-created fields (USER_DEFINED) with an
-      // actual value - Wix's own SYSTEM bookkeeping fields (subscription
-      // status, display-name preferences, etc.) are noise here and mostly
-      // duplicate what's already captured in dedicated columns above.
-      extendedFields: extendedFields
-        ? (Object.fromEntries(
-            Object.entries(extendedFields)
-              .filter(([k]) => extendedFieldDefs.get(k)?.fieldType === "USER_DEFINED")
-              .map(([k, v]) => [extendedFieldDefs.get(k)?.displayName ?? k, unwrapWixValue(v)])
-              .filter(([, v]) => v !== null && v !== "")
-          ) as any)
-        : undefined,
-    };
+    const existingContact = await db.wixContact.findUnique({
+      where: { wixContactId: contact.id },
+      select: { overrides: true },
+    });
+
+    // A manual edit on this contact (see EditableField) wins over whatever
+    // this sync run just fetched, so it survives future syncs.
+    const fields = applyOverrides(
+      {
+        userId: user.id,
+        address: (contact.info?.addresses?.items as any) ?? undefined,
+        labels: (labelKeys?.map((key) => labelNames.get(key) ?? key) as any) ?? undefined,
+        source: contact.source?.sourceType ?? undefined,
+        wixCreatedDate: contact.createdDate ? new Date(contact.createdDate) : undefined,
+        lastActivityAt: contact.lastActivity?.activityDate
+          ? new Date(contact.lastActivity.activityDate)
+          : undefined,
+        lastActivityType: contact.lastActivity?.activityType ?? undefined,
+        birthdate: contact.info?.birthdate ?? undefined,
+        locale: contact.info?.locale ?? undefined,
+        subscriptionStatus: contact.primaryEmail?.subscriptionStatus ?? undefined,
+        // Only show genuine site-owner-created fields (USER_DEFINED) with an
+        // actual value - Wix's own SYSTEM bookkeeping fields (subscription
+        // status, display-name preferences, etc.) are noise here and mostly
+        // duplicate what's already captured in dedicated columns above.
+        extendedFields: extendedFields
+          ? (Object.fromEntries(
+              Object.entries(extendedFields)
+                .filter(([k]) => extendedFieldDefs.get(k)?.fieldType === "USER_DEFINED")
+                .map(([k, v]) => [extendedFieldDefs.get(k)?.displayName ?? k, unwrapWixValue(v)])
+                .filter(([, v]) => v !== null && v !== "")
+            ) as any)
+          : undefined,
+      },
+      existingContact?.overrides
+    );
 
     await db.wixContact.upsert({
       where: { wixContactId: contact.id },
@@ -292,15 +303,19 @@ export async function syncWix() {
       create: { wixContactId: contact.id, ...fields },
     });
 
-    // Also backfill company/jobTitle/phone onto the unified User row if
-    // we don't already have them from another source.
+    // Also backfill company/jobTitle/phone onto the unified User row if we
+    // don't already have them from another source or a manual edit.
+    const userOverrides = (user.overrides as Record<string, unknown> | null) ?? {};
     await db.user.update({
       where: { id: user.id },
-      data: {
-        company: contact.info?.company ?? undefined,
-        jobTitle: contact.info?.jobTitle ?? undefined,
-        phone: contact.primaryInfo?.phone ?? contact.info?.phones?.items?.[0]?.phone ?? undefined,
-      },
+      data: applyOverrides(
+        {
+          company: contact.info?.company ?? undefined,
+          jobTitle: contact.info?.jobTitle ?? undefined,
+          phone: contact.primaryInfo?.phone ?? contact.info?.phones?.items?.[0]?.phone ?? undefined,
+        },
+        userOverrides
+      ),
     });
   }
 

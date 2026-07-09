@@ -18,6 +18,7 @@ import zlib from "node:zlib";
 import AdmZip from "adm-zip";
 import { db } from "@/lib/db";
 import { upsertUserByEmail } from "@/lib/sync/util";
+import { applyOverrides } from "@/lib/editableFields";
 
 function basicAuthHeader(): HeadersInit {
   const key = process.env.AMPLITUDE_API_KEY;
@@ -157,22 +158,32 @@ export async function syncAmplitude() {
       .reverse()
       .find((e) => e.event_type === GOAL_ACCEPTED_EVENT && e.event_properties?.accepted_by);
 
-    const fields = {
-      userId,
-      deviceType: latest.device_type,
-      platform: latest.platform,
-      lastSeenAt: parseAmplitudeTime(latest.event_time),
-      firstSeenAt: parseAmplitudeTime(earliest.event_time),
-      totalEvents: userEvents.length,
-      sessionCount,
-      goalCompletedCount,
-      goalSharedCount,
-      partnerInvitedCount,
-      partnerAcceptedAt: partnerAcceptedEvent ? parseAmplitudeTime(partnerAcceptedEvent.event_time) : null,
-      partnerUuid: (goalAcceptedEvent?.event_properties?.accepted_by as string | undefined) ?? null,
-      properties: latest.user_properties as any,
-      recentEvents: userEvents.slice(-20) as any,
-    };
+    const existing = await db.amplitudeProfile.findUnique({
+      where: { amplitudeUserId },
+      select: { overrides: true },
+    });
+
+    // A manual edit on this profile (see EditableField) wins over whatever
+    // this sync run just computed, so it survives future syncs.
+    const fields = applyOverrides(
+      {
+        userId,
+        deviceType: latest.device_type,
+        platform: latest.platform,
+        lastSeenAt: parseAmplitudeTime(latest.event_time),
+        firstSeenAt: parseAmplitudeTime(earliest.event_time),
+        totalEvents: userEvents.length,
+        sessionCount,
+        goalCompletedCount,
+        goalSharedCount,
+        partnerInvitedCount,
+        partnerAcceptedAt: partnerAcceptedEvent ? parseAmplitudeTime(partnerAcceptedEvent.event_time) : null,
+        partnerUuid: (goalAcceptedEvent?.event_properties?.accepted_by as string | undefined) ?? null,
+        properties: latest.user_properties as any,
+        recentEvents: userEvents.slice(-20) as any,
+      },
+      existing?.overrides
+    );
 
     await db.amplitudeProfile.upsert({
       where: { amplitudeUserId },

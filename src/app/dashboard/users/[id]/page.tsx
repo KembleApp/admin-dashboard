@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import EditableField from "@/components/EditableField";
 
 const userInclude = {
   amplitudeProfile: true,
@@ -86,41 +87,109 @@ function PersonSections({ user }: { user: UserWithRelations }) {
       </div>
 
       <Section title="Demographics / PII">
-        <Field label="Name" value={user.name} />
+        <EditableField label="Name" value={user.name} userId={user.id} model="user" field="name" kind="string" />
         <Field label="Email" value={user.email} />
-        <Field label="Phone" value={user.phone} />
-        <Field label="Location" value={user.location} />
-        <Field label="Company" value={user.company} />
-        <Field label="Job title" value={user.jobTitle} />
+        <EditableField label="Phone" value={user.phone} userId={user.id} model="user" field="phone" kind="string" />
+        <EditableField
+          label="Location"
+          value={user.location}
+          userId={user.id}
+          model="user"
+          field="location"
+          kind="string"
+        />
+        <EditableField
+          label="Company"
+          value={user.company}
+          userId={user.id}
+          model="user"
+          field="company"
+          kind="string"
+        />
+        <EditableField
+          label="Job title"
+          value={user.jobTitle}
+          userId={user.id}
+          model="user"
+          field="jobTitle"
+          kind="string"
+        />
       </Section>
 
       <Section title="Amplitude — app behavior">
         {user.amplitudeProfile ? (
           <>
             <Field label="Amplitude user ID" value={user.amplitudeProfile.amplitudeUserId} />
-            <Field label="Platform" value={user.amplitudeProfile.platform} />
-            <Field label="Device type" value={user.amplitudeProfile.deviceType} />
-            <Field
-              label="First seen"
-              value={user.amplitudeProfile.firstSeenAt?.toLocaleString()}
+            <EditableField
+              label="Platform"
+              value={user.amplitudeProfile.platform}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="platform"
+              kind="string"
             />
+            <EditableField
+              label="Device type"
+              value={user.amplitudeProfile.deviceType}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="deviceType"
+              kind="string"
+            />
+            <Field label="First seen" value={user.amplitudeProfile.firstSeenAt?.toLocaleString()} />
             <Field label="Last seen" value={user.amplitudeProfile.lastSeenAt?.toLocaleString()} />
-            <Field label="Total events" value={user.amplitudeProfile.totalEvents} />
-            <Field label="Sessions (session_started)" value={user.amplitudeProfile.sessionCount} />
-            <Field
+            <EditableField
+              label="Total events"
+              value={user.amplitudeProfile.totalEvents}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="totalEvents"
+              kind="number"
+            />
+            <EditableField
+              label="Sessions (session_started)"
+              value={user.amplitudeProfile.sessionCount}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="sessionCount"
+              kind="number"
+            />
+            <EditableField
               label="Goals completed (goal_creation_completed)"
               value={user.amplitudeProfile.goalCompletedCount}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="goalCompletedCount"
+              kind="number"
             />
-            <Field label="Goals shared (goal_card_shared)" value={user.amplitudeProfile.goalSharedCount} />
-            <Field
+            <EditableField
+              label="Goals shared (goal_card_shared)"
+              value={user.amplitudeProfile.goalSharedCount}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="goalSharedCount"
+              kind="number"
+            />
+            <EditableField
               label="Partner invited (partner_invited)"
               value={user.amplitudeProfile.partnerInvitedCount}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="partnerInvitedCount"
+              kind="number"
             />
             <Field
               label="Partner accepted (household_canvas_unlocked)"
               value={user.amplitudeProfile.partnerAcceptedAt?.toLocaleString() ?? "Not yet"}
             />
-            <Field label="Partner UUID (accepted_by)" value={user.amplitudeProfile.partnerUuid} />
+            <EditableField
+              label="Partner UUID (accepted_by)"
+              value={user.amplitudeProfile.partnerUuid}
+              userId={user.id}
+              model="amplitudeProfile"
+              field="partnerUuid"
+              kind="string"
+            />
 
             {(() => {
               const events = (user.amplitudeProfile.recentEvents as RecentEvent[] | null) ?? [];
@@ -155,13 +224,48 @@ function PersonSections({ user }: { user: UserWithRelations }) {
         {user.wixContact ? (
           <>
             <Field label="Wix contact ID" value={user.wixContact.wixContactId} />
-            <Field label="Source" value={user.wixContact.source} />
+            <EditableField
+              label="Source"
+              value={user.wixContact.source}
+              userId={user.id}
+              model="wixContact"
+              field="source"
+              kind="string"
+            />
             <Field label="Wix created date" value={user.wixContact.wixCreatedDate?.toLocaleDateString()} />
             <Field label="Last activity" value={user.wixContact.lastActivityAt?.toLocaleString()} />
-            <Field label="Last activity type" value={user.wixContact.lastActivityType} />
-            <Field label="Birthdate" value={user.wixContact.birthdate} />
-            <Field label="Locale" value={user.wixContact.locale} />
-            <Field label="Email subscription" value={user.wixContact.subscriptionStatus} />
+            <EditableField
+              label="Last activity type"
+              value={user.wixContact.lastActivityType}
+              userId={user.id}
+              model="wixContact"
+              field="lastActivityType"
+              kind="string"
+            />
+            <EditableField
+              label="Birthdate"
+              value={user.wixContact.birthdate}
+              userId={user.id}
+              model="wixContact"
+              field="birthdate"
+              kind="string"
+            />
+            <EditableField
+              label="Locale"
+              value={user.wixContact.locale}
+              userId={user.id}
+              model="wixContact"
+              field="locale"
+              kind="string"
+            />
+            <EditableField
+              label="Email subscription"
+              value={user.wixContact.subscriptionStatus}
+              userId={user.id}
+              model="wixContact"
+              field="subscriptionStatus"
+              kind="string"
+            />
             <Field
               label="Labels"
               value={

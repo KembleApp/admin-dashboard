@@ -36,6 +36,11 @@ model User {
   jobTitle String?
   phone    String?
 
+  // Field name -> value for anything an admin has manually edited on this
+  // page. Syncs check this before overwriting a field, so a manual edit
+  // survives the next "Sync now" instead of being silently reverted.
+  overrides Json?
+
   amplitudeProfile  AmplitudeProfile?
   wixContact        WixContact?
   typeformResponses TypeformResponse[]
@@ -91,6 +96,9 @@ model AmplitudeProfile {
   properties      Json?
   // Recent behavioral events, most-recent-first.
   recentEvents    Json?
+  // Field name -> value for anything an admin has manually edited - see
+  // User.overrides for how syncs respect this.
+  overrides       Json?
   syncedAt        DateTime  @default(now())
 }
 
@@ -115,6 +123,9 @@ model WixContact {
   subscriptionStatus String?
   // Custom fields defined in the Wix site's contact schema, kept as-is.
   extendedFields    Json?
+  // Field name -> value for anything an admin has manually edited - see
+  // User.overrides for how syncs respect this.
+  overrides    Json?
   syncedAt     DateTime @default(now())
 }
 
