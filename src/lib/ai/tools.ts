@@ -44,6 +44,15 @@ export const AI_CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "get_directory_stats",
+    description:
+      "Get aggregate counts across the whole user directory — e.g. how many users have Typeform responses, an Amplitude profile, a Wix contact record, or a linked partner. Use this for 'how many users have X' style questions instead of search_users, which only finds individual matches.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
     name: "render_chart",
     description:
       "Display a simple bar or line chart to the admin in the chat panel. Use this when a visual comparison (e.g. session counts across a few users) would be clearer than a text table. Only the most recent call in a turn is shown.",
@@ -130,6 +139,27 @@ export async function runTool(name: string, input: any, toolUseId: string): Prom
           },
         });
         return { toolUseId, content: JSON.stringify(values) };
+      }
+
+      case "get_directory_stats": {
+        const [totalUsers, withTypeformResponses, withAmplitudeProfile, withWixContact, withPartnerLinked] =
+          await Promise.all([
+            db.user.count(),
+            db.user.count({ where: { typeformResponses: { some: {} } } }),
+            db.user.count({ where: { amplitudeProfile: { isNot: null } } }),
+            db.user.count({ where: { wixContact: { isNot: null } } }),
+            db.user.count({ where: { partnerId: { not: null } } }),
+          ]);
+        return {
+          toolUseId,
+          content: JSON.stringify({
+            totalUsers,
+            withTypeformResponses,
+            withAmplitudeProfile,
+            withWixContact,
+            withPartnerLinked,
+          }),
+        };
       }
 
       case "render_chart": {
