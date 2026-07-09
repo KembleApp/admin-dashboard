@@ -16,6 +16,9 @@
  * Members/Pricing Plans API. The WixContact.membership column is left
  * unset here; wire up that API separately if site membership status is
  * needed.
+ *
+ * Partner linking (User.partnerId) is sourced separately from a Wix CMS/
+ * Data collection ("BetaApplication"), not Contacts - see linkPartners().
  */
 import { db } from "@/lib/db";
 import { upsertUserByEmail } from "@/lib/sync/util";
@@ -118,12 +121,6 @@ async function fetchExtendedFieldDefs(): Promise<Map<string, WixExtendedField>> 
     for (const field of (data.fields ?? []) as WixExtendedField[]) {
       fields.set(field.key, field);
     }
-    // TEMP DEBUG: confirm exactly what Wix returns (names/types), to check
-    // whether "Partner Email" is really there and what its fieldType is.
-    console.log(
-      "Wix extended field definitions:",
-      JSON.stringify([...fields.values()].map((f) => ({ key: f.key, name: f.displayName, type: f.fieldType })))
-    );
   } catch (err) {
     console.warn("Wix list extended fields failed - falling back to raw field keys", err);
   }
@@ -164,42 +161,85 @@ async function listContacts(): Promise<WixContact[]> {
   return results;
 }
 
-// TEMP DEBUG: "Partner Email" turned out to live in a Wix CMS collection
-// (BetaApplication), not Contacts or Members. Dumping a couple of raw rows
-// to see the actual field keys before wiring up real matching logic.
-async function debugFetchBetaApplication() {
+type BetaApplicationItem = { data?: { email?: string; partnerEmail?: string } };
+
+// "Partner Email" isn't a Contacts or Members field at all - it's a column
+// in a Wix CMS/Data collection (dataCollectionId "BetaApplication") built
+// from the beta signup form, confirmed directly in Wix's CMS UI. Each item
+// has the submitter's own email (`email`) and their partner's
+// (`partnerEmail`). Uses the Wix Data API, a third distinct Wix REST
+// surface from Contacts and Members:
+// https://dev.wix.com/docs/rest/api-reference/wix-data/data-items/query-data-items
+async function fetchPartnerEmailPairs(): Promise<{ email: string; partnerEmail: string }[]> {
+  const pairs: { email: string; partnerEmail: string }[] = [];
+  const limit = 100;
+  let offset = 0;
+
   try {
-    const res = await fetch(`${WIX_API}/wix-data/v2/items/query`, {
-      method: "POST",
-      headers: wixHeaders(),
-      body: JSON.stringify({
-        dataCollectionId: "BetaApplication",
-        query: { paging: { limit: 3 } },
-      }),
-    });
-    if (!res.ok) {
-      console.warn(`Wix CMS query failed (${res.status}): ${await res.text()}`);
-      return;
+    for (;;) {
+      const res = await fetch(`${WIX_API}/wix-data/v2/items/query`, {
+        method: "POST",
+        headers: wixHeaders(),
+        body: JSON.stringify({
+          dataCollectionId: "BetaApplication",
+          query: { paging: { limit, offset } },
+        }),
+      });
+      if (!res.ok) {
+        console.warn(`Wix CMS (BetaApplication) query failed (${res.status}) - skipping partner linking`);
+        return pairs;
+      }
+      const data = await res.json();
+      const items = (data.dataItems ?? []) as BetaApplicationItem[];
+
+      for (const item of items) {
+        const email = item.data?.email?.trim();
+        const partnerEmail = item.data?.partnerEmail?.trim();
+        // A few rows have partnerEmail set to the submitter's own email
+        // (data-entry artifact, not a real pairing) - skip those.
+        if (email && partnerEmail && email.toLowerCase() !== partnerEmail.toLowerCase()) {
+          pairs.push({ email, partnerEmail });
+        }
+      }
+
+      if (items.length < limit) break;
+      offset += limit;
     }
-    const data = await res.json();
-    console.log("BetaApplication sample items:", JSON.stringify(data.dataItems));
   } catch (err) {
-    console.warn("Wix CMS query failed", err);
+    console.warn("Wix CMS (BetaApplication) query failed - skipping partner linking", err);
   }
+
+  return pairs;
+}
+
+async function linkPartners() {
+  const pairs = await fetchPartnerEmailPairs();
+  let linked = 0;
+
+  for (const { email, partnerEmail } of pairs) {
+    try {
+      const user = await upsertUserByEmail(email);
+      const partner = await upsertUserByEmail(partnerEmail);
+      // Set symmetrically so `partner` resolves correctly from either side
+      // - partnerId is unique, so a data-entry error pointing two different
+      // people at the same partner throws here rather than silently
+      // corrupting an existing pairing.
+      await db.user.update({ where: { id: user.id }, data: { partnerId: partner.id } });
+      await db.user.update({ where: { id: partner.id }, data: { partnerId: user.id } });
+      linked++;
+    } catch (err) {
+      console.warn(`Wix CMS: couldn't link partner for ${email} -> ${partnerEmail}`, err);
+    }
+  }
+
+  console.log(`Wix CMS partner linking complete: ${linked} pair(s) linked.`);
 }
 
 export async function syncWix() {
-  await debugFetchBetaApplication();
   const contacts = await listContacts();
   console.log(`Wix: found ${contacts.length} contact(s)`);
   const labelNames = await fetchLabelNames();
   const extendedFieldDefs = await fetchExtendedFieldDefs();
-  // Wix's "Partner Email" custom field links two contacts as a couple.
-  // Matched by its resolved display name (how a site owner identifies it
-  // in Wix's UI), not the opaque key, which is loop-invariant so found once.
-  const partnerEmailFieldKey = [...extendedFieldDefs.entries()].find(
-    ([, def]) => def.displayName.trim().toLowerCase() === "partner email"
-  )?.[0];
 
   let matched = 0;
 
@@ -218,12 +258,6 @@ export async function syncWix() {
 
     const extendedFields = contact.info?.extendedFields?.items;
     const labelKeys = contact.info?.labelKeys?.items;
-
-    // TEMP DEBUG: dump the raw extendedFields for one specific contact to
-    // check whether "Partner Email" is actually present on it at all.
-    if (email.trim().toLowerCase() === "hannahmaunder11@hotmail.co.uk") {
-      console.log("Hannah raw extendedFields:", JSON.stringify(extendedFields));
-    }
 
     const fields = {
       userId: user.id,
@@ -268,26 +302,11 @@ export async function syncWix() {
         phone: contact.primaryInfo?.phone ?? contact.info?.phones?.items?.[0]?.phone ?? undefined,
       },
     });
-
-    const partnerEmailRaw = partnerEmailFieldKey ? extendedFields?.[partnerEmailFieldKey] : undefined;
-    const partnerEmail = partnerEmailRaw ? (unwrapWixValue(partnerEmailRaw) as string | undefined) : undefined;
-
-    if (partnerEmail?.trim() && partnerEmail.trim().toLowerCase() !== email.trim().toLowerCase()) {
-      try {
-        const partner = await upsertUserByEmail(partnerEmail);
-        // Set symmetrically so `partner` resolves correctly from either
-        // side - partnerId is unique, so a data-entry error pointing two
-        // different people at the same partner would throw here rather
-        // than silently corrupt an existing pairing.
-        await db.user.update({ where: { id: user.id }, data: { partnerId: partner.id } });
-        await db.user.update({ where: { id: partner.id }, data: { partnerId: user.id } });
-      } catch (err) {
-        console.warn(`Wix: couldn't link partner for ${email} -> ${partnerEmail}`, err);
-      }
-    }
   }
 
   console.log(`Wix sync complete: ${matched} contact(s) matched to a user by email.`);
+
+  await linkPartners();
 }
 
 if (require.main === module) {
