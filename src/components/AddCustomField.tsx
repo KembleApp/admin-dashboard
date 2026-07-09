@@ -256,7 +256,7 @@ export default function AddCustomField({
                           onClick={() => toggleValueLabel(option)}
                           className={`rounded-full border px-2.5 py-1 text-xs ${
                             selected
-                              ? "border-slate-900 bg-slate-900 text-white"
+                              ? "border-kemble-coral bg-kemble-coral text-kemble-ink"
                               : "border-slate-300 text-slate-600 hover:border-slate-400"
                           }`}
                         >

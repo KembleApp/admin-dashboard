@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -12,13 +13,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="min-h-screen">
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-        <div>
-          <h1 className="text-base font-semibold">User Admin Dashboard</h1>
-          <p className="text-xs text-slate-500">Internal use only &middot; contains PII</p>
+      <header className="flex items-center justify-between border-b border-kemble-ink/10 bg-white px-6 py-4">
+        <div className="flex items-center gap-3">
+          <Image src="/kemble-mark.png" alt="" width={28} height={28} priority />
+          <div>
+            <h1 className="font-display text-lg italic text-kemble-ink">User Admin Dashboard</h1>
+            <p className="text-xs text-kemble-ink/50">Internal use only &middot; contains PII</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-500">{session.user?.email}</span>
+          <span className="text-sm text-kemble-ink/60">{session.user?.email}</span>
           <SyncButton />
           <SignOutButton />
         </div>

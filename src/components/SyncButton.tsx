@@ -52,7 +52,7 @@ export default function SyncButton() {
       <button
         onClick={handleSync}
         disabled={isPending || syncing}
-        className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+        className="rounded-md bg-kemble-ink px-3 py-1.5 text-sm text-white hover:bg-kemble-navy disabled:opacity-50"
       >
         {syncing ? "Syncing…" : "Sync now"}
       </button>

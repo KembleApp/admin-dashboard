@@ -19,8 +19,8 @@ export const dynamic = "force-dynamic";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5">
-      <h3 className="mb-3 text-sm font-semibold text-slate-700">{title}</h3>
+    <section className="rounded-lg border border-kemble-ink/10 bg-white p-5">
+      <h3 className="font-display mb-3 text-base italic text-kemble-navy">{title}</h3>
       {children}
     </section>
   );
@@ -85,8 +85,8 @@ function PersonSections({ user }: { user: UserWithRelations }) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold">{user.name ?? user.email}</h2>
-        <p className="text-sm text-slate-500">{user.email}</p>
+        <h2 className="font-display text-2xl italic text-kemble-ink">{user.name ?? user.email}</h2>
+        <p className="text-sm text-kemble-ink/50">{user.email}</p>
       </div>
 
       <Section title="Demographics / PII">
@@ -378,13 +378,13 @@ export default async function UserDetailPage({ params }: { params: { id: string 
 
   return (
     <div className={`mx-auto space-y-4 ${user.partner ? "max-w-6xl" : "max-w-3xl"}`}>
-      <Link href="/dashboard" className="text-sm text-slate-500 hover:underline">
+      <Link href="/dashboard" className="text-sm text-kemble-ink/50 hover:underline">
         &larr; Back to all users
       </Link>
 
       {user.partner ? (
         <>
-          <h1 className="text-lg font-semibold text-slate-700">
+          <h1 className="font-display text-xl italic text-kemble-navy">
             Household: {user.name ?? user.email} &amp; {user.partner.name ?? user.partner.email}
           </h1>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

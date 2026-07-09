@@ -37,9 +37,9 @@ export default async function DashboardPage({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 className="text-sm font-medium text-slate-600 whitespace-nowrap">
+        <h2 className="text-sm font-medium text-kemble-ink/70 whitespace-nowrap">
           {users.length} unified user{users.length === 1 ? "" : "s"}
-          {q && <span className="text-slate-400"> matching &quot;{q}&quot;</span>}
+          {q && <span className="text-kemble-ink/40"> matching &quot;{q}&quot;</span>}
         </h2>
         <div className="flex items-center gap-3">
           <SearchBox />
@@ -47,9 +47,9 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-kemble-ink/10 bg-white">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-kemble-ink/10 bg-kemble-cream text-xs uppercase tracking-wide text-kemble-ink/50">
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Email</th>
@@ -60,19 +60,19 @@ export default async function DashboardPage({
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} className="group relative border-b border-slate-100 last:border-0 hover:bg-slate-50">
+              <tr key={u.id} className="group relative border-b border-kemble-ink/5 last:border-0 hover:bg-kemble-cream">
                 <td className="px-4 py-3">
-                  <Link href={`/dashboard/users/${u.id}`} className="font-medium text-slate-900 hover:underline">
+                  <Link href={`/dashboard/users/${u.id}`} className="font-medium text-kemble-ink hover:underline">
                     {u.name ?? "—"}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{u.email}</td>
-                <td className="px-4 py-3 text-slate-600">{fmtDate(u.amplitudeProfile?.lastSeenAt)}</td>
-                <td className="px-4 py-3 text-slate-600">{u._count.typeformResponses}</td>
+                <td className="px-4 py-3 text-kemble-ink/60">{u.email}</td>
+                <td className="px-4 py-3 text-kemble-ink/60">{fmtDate(u.amplitudeProfile?.lastSeenAt)}</td>
+                <td className="px-4 py-3 text-kemble-ink/60">{u._count.typeformResponses}</td>
                 <td className="px-4 py-3 text-right">
                   <Link
                     href={`/dashboard/users/${u.id}`}
-                    className="opacity-0 transition-opacity group-hover:opacity-100 text-sm font-medium text-slate-900 hover:underline whitespace-nowrap"
+                    className="opacity-0 transition-opacity group-hover:opacity-100 text-sm font-medium text-kemble-ink hover:underline whitespace-nowrap"
                   >
                     View details →
                   </Link>
@@ -81,7 +81,7 @@ export default async function DashboardPage({
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={5} className="px-4 py-10 text-center text-kemble-ink/40">
                   {q
                     ? `No users match "${q}".`
                     : "No users yet. Run a sync (top right) once your data sources are connected."}
