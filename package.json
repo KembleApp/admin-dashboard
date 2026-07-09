@@ -15,6 +15,7 @@
     "sync:all": "npm run sync:typeform && npm run sync:amplitude && npm run sync:wix"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@prisma/client": "^5.20.0",
     "adm-zip": "^0.5.18",
     "next": "^14.2.35",

@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import SignOutButton from "@/components/SignOutButton";
 import SyncButton from "@/components/SyncButton";
+import AiChatWidget from "@/components/AiChatWidget";
 
 // Belt-and-suspenders alongside middleware.ts: also check the session
 // server-side so this layout never renders PII without a valid admin.
@@ -28,6 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </header>
       <main className="p-6">{children}</main>
+      <AiChatWidget />
     </div>
   );
 }
