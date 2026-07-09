@@ -3,11 +3,14 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import EditableField from "@/components/EditableField";
+import CustomFieldRow from "@/components/CustomFieldRow";
+import AddCustomField from "@/components/AddCustomField";
 
 const userInclude = {
   amplitudeProfile: true,
   wixContact: true,
   typeformResponses: { orderBy: { submittedAt: "desc" as const } },
+  customFieldValues: { include: { field: true } },
 } satisfies Prisma.UserInclude;
 
 type UserWithRelations = Prisma.UserGetPayload<{ include: typeof userInclude }>;
@@ -114,6 +117,24 @@ function PersonSections({ user }: { user: UserWithRelations }) {
           field="jobTitle"
           kind="string"
         />
+      </Section>
+
+      <Section title="Custom fields">
+        {user.customFieldValues.map((v) => (
+          <CustomFieldRow
+            key={v.fieldId}
+            userId={user.id}
+            fieldId={v.fieldId}
+            fieldName={v.field.name}
+            fieldType={v.field.type}
+            labelOptions={v.field.labelOptions}
+            value={v.value}
+            labelValues={v.labelValues}
+          />
+        ))}
+        <div className="mt-2">
+          <AddCustomField userId={user.id} existingFieldIds={user.customFieldValues.map((v) => v.fieldId)} />
+        </div>
       </Section>
 
       <Section title="Amplitude — app behavior">

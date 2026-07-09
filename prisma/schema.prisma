@@ -41,9 +41,10 @@ model User {
   // survives the next "Sync now" instead of being silently reverted.
   overrides Json?
 
-  amplitudeProfile  AmplitudeProfile?
-  wixContact        WixContact?
-  typeformResponses TypeformResponse[]
+  amplitudeProfile   AmplitudeProfile?
+  wixContact         WixContact?
+  typeformResponses  TypeformResponse[]
+  customFieldValues  CustomFieldValue[]
 
   // Resolved from Wix's "Partner Email" custom field (see syncWix). Set
   // symmetrically on both users when linked, so `partner` is always the
@@ -127,6 +128,44 @@ model WixContact {
   // User.overrides for how syncs respect this.
   overrides    Json?
   syncedAt     DateTime @default(now())
+}
+
+enum CustomFieldType {
+  TEXT // short plain text
+  LONG_TEXT // multi-line description
+  LINK // URL
+  LABEL // admin-defined multi-select tags, see labelOptions
+}
+
+// An admin-defined custom field, created once from any user's page and
+// then reusable across every person (e.g. a "Priority" label field
+// defined while editing one person shows up as an option to add on
+// everyone else's page too), rather than being redefined per-person.
+model CustomFieldDefinition {
+  id           String            @id @default(cuid())
+  name         String            @unique
+  type         CustomFieldType
+  // Only used when type = LABEL - the fixed set of tags an admin can pick
+  // from when assigning this field to a person.
+  labelOptions String[]
+  createdAt    DateTime          @default(now())
+  values       CustomFieldValue[]
+}
+
+// One person's value for one custom field.
+model CustomFieldValue {
+  id        String                @id @default(cuid())
+  userId    String
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fieldId   String
+  field     CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  // Used for TEXT / LONG_TEXT / LINK.
+  value       String?
+  // Used for LABEL - a subset of field.labelOptions.
+  labelValues String[]
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, fieldId])
 }
 
 // One row per Typeform response. A user can have many (one per form
