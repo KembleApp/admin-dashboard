@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import ImportAmplitudeEmails from "@/components/ImportAmplitudeEmails";
+import SearchBox from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic"; // always show fresh data, never statically cache PII
 
@@ -8,8 +10,23 @@ function fmtDate(d: Date | null | undefined) {
   return d ? new Date(d).toLocaleString() : "—";
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: { q?: string };
+}) {
+  const q = searchParams.q?.trim();
+  const where: Prisma.UserWhereInput | undefined = q
+    ? {
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+        ],
+      }
+    : undefined;
+
   const users = await db.user.findMany({
+    where,
     orderBy: { updatedAt: "desc" },
     include: {
       amplitudeProfile: true,
@@ -19,11 +36,15 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-baseline justify-between">
-        <h2 className="text-sm font-medium text-slate-600">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <h2 className="text-sm font-medium text-slate-600 whitespace-nowrap">
           {users.length} unified user{users.length === 1 ? "" : "s"}
+          {q && <span className="text-slate-400"> matching &quot;{q}&quot;</span>}
         </h2>
-        <ImportAmplitudeEmails />
+        <div className="flex items-center gap-3">
+          <SearchBox />
+          <ImportAmplitudeEmails />
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -61,7 +82,9 @@ export default async function DashboardPage() {
             {users.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
-                  No users yet. Run a sync (top right) once your data sources are connected.
+                  {q
+                    ? `No users match "${q}".`
+                    : "No users yet. Run a sync (top right) once your data sources are connected."}
                 </td>
               </tr>
             )}
