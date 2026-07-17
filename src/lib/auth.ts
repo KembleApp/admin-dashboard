@@ -3,13 +3,27 @@ import GoogleProvider from "next-auth/providers/google";
 import { db } from "@/lib/db";
 
 // This dashboard holds PII, so sign-in is restricted to an explicit
-// allowlist (ADMIN_EMAILS) checked against the AdminUser table. Anyone not
-// on the list is denied at sign-in — there is no self-service signup.
+// allowlist (ADMIN_EMAILS), a trusted email domain (ADMIN_EMAIL_DOMAINS),
+// or the AdminUser table. Anyone matching none of those is denied at
+// sign-in — there is no self-service signup.
 function allowedEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function allowedDomains(): string[] {
+  return (process.env.ADMIN_EMAIL_DOMAINS ?? "")
+    .split(",")
+    .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+    .filter(Boolean);
+}
+
+function isAllowedByAllowlist(email: string): boolean {
+  if (allowedEmails().includes(email)) return true;
+  const domain = email.split("@")[1];
+  return Boolean(domain && allowedDomains().includes(domain));
 }
 
 export const authOptions: NextAuthOptions = {
@@ -32,7 +46,7 @@ export const authOptions: NextAuthOptions = {
       if (!user.email) return false;
       const email = user.email.toLowerCase();
 
-      if (allowedEmails().includes(email)) {
+      if (isAllowedByAllowlist(email)) {
         // Keep AdminUser table in sync so it's queryable / auditable.
         await db.adminUser.upsert({
           where: { email },
