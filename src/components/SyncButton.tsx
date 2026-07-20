@@ -12,13 +12,25 @@ type Toast = { message: string; isError: boolean };
 // instead of the sum of all three.
 const SOURCES = ["typeform", "amplitude", "wix"] as const;
 
+// Matches the routes' `maxDuration = 300` (+ a small buffer). Without this,
+// a hung connection or a function that gets killed without a clean HTTP
+// response leaves fetch() waiting indefinitely - the button would show
+// "Syncing..." forever instead of surfacing a clear error to retry.
+const SYNC_TIMEOUT_MS = 310_000;
+
 async function syncOne(source: (typeof SOURCES)[number]): Promise<string> {
   try {
-    const res = await fetch(`/api/sync/${source}`, { method: "POST" });
+    const res = await fetch(`/api/sync/${source}`, {
+      method: "POST",
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+    });
     const data = await res.json();
     if (!res.ok) return `error: request failed (${res.status})`;
     return data.result as string;
   } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      return `error: timed out after ${SYNC_TIMEOUT_MS / 1000}s`;
+    }
     return `error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
